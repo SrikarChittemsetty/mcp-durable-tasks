@@ -1,0 +1,17 @@
+{
+  "name": "mcp-durable-tasks",
+  "version": "0.1.0",
+  "description": "A spec-conformant, crash-durable task store for the MCP Tasks extension (SEP-2663) — the persistent IMcpTaskStore-equivalent the official SDKs ship without.",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  }
+}
