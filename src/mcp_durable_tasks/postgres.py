@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import psycopg
 from psycopg.rows import dict_row
@@ -226,6 +226,71 @@ class PostgresTaskStore:
 
     def cancel_task(self, task_id: str) -> Task:
         return self.update_task(task_id, TaskState.CANCELLED)
+
+    # --- atomic side-effect + completion (the exactly-once primitive) ---------
+
+    def complete_with_effect(
+        self,
+        task_id: str,
+        effect: Callable[[psycopg.Cursor], None],
+        *,
+        result: dict[str, Any] | None = None,
+    ) -> Task:
+        """Apply `effect` and move the task to COMPLETED in ONE transaction.
+
+        This is how you get *true* exactly-once for a side effect that lives in
+        this same database: the effect (e.g. an INSERT into a ledger) and the
+        state transition commit together or not at all. A crash before commit
+        rolls back both — the task stays WORKING and a retry re-runs cleanly. A
+        crash after commit leaves the task COMPLETED, and because COMPLETED is
+        terminal, recovery sees it's done and never re-applies the effect.
+
+        Already-completed tasks are a no-op (returns the existing task), so
+        calling this twice is safe — the second call does nothing.
+
+        For an *external* side effect (a Stripe call that can't join this
+        transaction) you can't get true exactly-once; you get at-least-once plus
+        an idempotency key at the external boundary = effectively-once. That
+        honest distinction is the point of the `idempotency_key` column.
+        """
+        with self._conn.transaction():
+            with self._conn.cursor() as cur:
+                cur.execute(
+                    f"SELECT {_COLUMNS} FROM tasks WHERE id = %s FOR UPDATE",
+                    [task_id],
+                )
+                row = cur.fetchone()
+                if row is None:
+                    raise TaskNotFound(task_id)
+
+                current = _row_to_task(row)
+                if current.state == TaskState.COMPLETED:
+                    # Idempotent recovery: the effect already committed. Do not
+                    # run it again.
+                    return current
+
+                # Validate the transition before doing the effect.
+                moved = current.transition_to(TaskState.COMPLETED, result=result)
+
+                # The side effect, in the same transaction as the state change.
+                effect(cur)
+
+                cur.execute(
+                    """
+                    UPDATE tasks
+                       SET state = %(state)s,
+                           result = %(result)s,
+                           updated_at = %(updated_at)s
+                     WHERE id = %(id)s
+                    """,
+                    {
+                        "id": moved.id,
+                        "state": moved.state.value,
+                        "result": Jsonb(moved.result) if moved.result is not None else None,
+                        "updated_at": moved.updated_at,
+                    },
+                )
+                return moved
 
     # --- list / reap ----------------------------------------------------------
 
