@@ -111,6 +111,16 @@ Durability has a measurable cost, reported with percentiles (averages hide tail 
 
 The ~30–50× latency gap *is* the fsync-and-network tax for crash-survival — measured, not asserted.
 
+**Comparative correctness** — this system vs. the naive alternative (application-level check-then-insert) under a retry storm of N simultaneous same-key requests. Duplicate charges scale as ≈ N−1 for the naive approach; this system is exactly-once at every level:
+
+| concurrent requests | naive: avg duplicate charges/trial | ours |
+|---------------------|------------------------------------|------|
+| 2  | 1.00  | 0 |
+| 8  | 7.00  | 0 |
+| 16 | 14.99 | 0 |
+
+That gap — 0 vs. N−1 double-charges — *is* the thesis, measured: enforcing idempotency in the database (`INSERT … ON CONFLICT` on a `UNIQUE` index) rather than application code is the difference between correct and broken under contention. Full methodology in [`bench/RESULTS.md`](bench/RESULTS.md).
+
 ## Run it
 
 ```bash

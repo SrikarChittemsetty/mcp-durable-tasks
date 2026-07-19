@@ -48,8 +48,50 @@ distributed deployment.
   commit-time I/O — the reason percentiles, not averages, are the honest way to
   report a durable system's latency.
 
+## Comparative correctness under concurrency
+
+The latency numbers above measure *this system against itself* (durable vs.
+in-memory floor). This section measures it against the **alternative most people
+reach for first**: application-level "check if the key exists, then insert"
+dedup, with no database constraint.
+
+Both strategies face the identical workload — N simultaneous requests carrying
+the same idempotency key (a retry storm / at-least-once delivery). The only
+variable is the dedup mechanism. Correct behaviour = exactly one row created.
+
+**Reproduce:**
+
+```bash
+python bench/correctness.py --conninfo "host=127.0.0.1 port=5432 user=postgres dbname=mdt" \
+    --trials 200 --work-ms 2 --concurrency-levels "2,4,8,16"
+```
+
+**Result** (200 trials per level, requests released simultaneously — the retry-storm worst case):
+
+| concurrent requests | naive: trials double-charged | naive: avg duplicate charges/trial | ours: double-charges |
+|---------------------|------------------------------|------------------------------------|----------------------|
+| 2  | 200/200 (100%) | 1.00  | 0/200 |
+| 4  | 200/200 (100%) | 3.00  | 0/200 |
+| 8  | 200/200 (100%) | 7.00  | 0/200 |
+| 16 | 200/200 (100%) | 14.99 | 0/200 |
+
+**Reading it:** the naive approach's duplicate charges scale as ≈ **N − 1** — under
+simultaneous arrival, all N requests pass the existence check before any of them
+inserts, so every one creates a charge. `INSERT ... ON CONFLICT` against a UNIQUE
+index is **exactly-once at every concurrency level**. This is the whole thesis,
+measured: pushing the guarantee into the database is not a stylistic choice, it's
+the difference between 0 and N−1 double-charges under contention.
+
+(Simultaneous release is the worst case; it's also a realistic one — retry storms
+and at-least-once queues deliver duplicates in tight bursts. The point is that the
+naive approach has no safe floor under contention, while the DB-level approach has
+no failures at all.)
+
 ## Roadmap
 
 The intended next comparison is a **Temporal-wrapped baseline** running the same
 task lifecycle, to answer "doesn't Temporal already do this?" with a measured
-latency/throughput delta rather than an assertion.
+latency/throughput delta rather than an assertion. Note the honest framing: the
+goal there is *comparable latency at a fraction of the operational footprint* for
+this specific workload — not "faster than Temporal," which would be an
+apples-to-oranges claim against a full distributed engine.
