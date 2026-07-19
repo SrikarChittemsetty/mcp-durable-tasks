@@ -39,6 +39,9 @@ jobs:
       - name: Install
         run: pip install -e ".[dev,postgres]"
 
+      - name: Type-check
+        run: mypy src/mcp_durable_tasks
+
       - name: Run tests (incl. crash-recovery against Postgres)
         run: pytest -v
 

@@ -232,7 +232,7 @@ class PostgresTaskStore:
     def complete_with_effect(
         self,
         task_id: str,
-        effect: Callable[[psycopg.Cursor], None],
+        effect: Callable[[psycopg.Cursor[Any]], None],
         *,
         result: dict[str, Any] | None = None,
     ) -> Task:
