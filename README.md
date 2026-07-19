@@ -18,6 +18,39 @@ MCP's Tasks extension standardizes the *interface* for long-running tool calls (
 
 That claim isn't asserted; it's **tested against a real Postgres with real `SIGKILL`s** (see [Proof](#proof-not-claims)).
 
+## See it work
+
+A real, runnable demo — real worker processes, real `SIGKILL`s, real rows in Postgres. It shows a naive charge double-billing a customer after a crash, then this system staying exactly-once through two different crashes:
+
+```
+$ python scripts/demo.py
+
+THE PROBLEM — a naive charge, retried after a crash
+  charge sent .................... $50
+  crash + blind retry fires the same charge again
+  ✗ customer charged $100 — DOUBLE CHARGED
+
+WITH mcp-durable-tasks — CASE 1: crash BEFORE the charge commits
+  task created .................... state=working
+  worker killed mid-transaction (kill -9, rc=-9) 💥
+  charge rolled back ............. ledger=$0, state=working
+  recovery re-runs the worker .... state=completed
+  ✓ customer charged exactly once: $50
+
+WITH mcp-durable-tasks — CASE 2: crash AFTER the charge commits
+  task created .................... state=working
+  worker charged, then killed (kill -9, rc=-9) 💥
+  charge already landed .......... ledger=$50, state=completed
+  recovery sees terminal ......... worker says 'noop-terminal' (refuses to re-charge)
+  ✓ customer charged exactly once: $50
+
+RESULT
+  naive approach:        $100  (double charged)
+  mcp-durable-tasks:     $50   (exactly once, through two different crashes)
+```
+
+Run it yourself: `python scripts/demo.py --conninfo "host=127.0.0.1 port=5432 user=postgres dbname=mdt"`. To render it as a GIF: `brew install vhs && vhs scripts/demo.tape`.
+
 ## How it works
 
 ```
