@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: mdt
+        ports:
+          - 5432:5432
+        # Wait until Postgres is accepting connections before the job runs.
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      MDT_TEST_DATABASE_URL: "host=127.0.0.1 port=5432 user=postgres password=postgres dbname=mdt"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: pip install -e ".[dev,postgres]"
+
+      - name: Run tests (incl. crash-recovery against Postgres)
+        run: pytest -v
+
+      - name: Benchmark (smoke)
+        run: python bench/benchmark.py --conninfo "$MDT_TEST_DATABASE_URL" --iterations 200 --warmup 50
