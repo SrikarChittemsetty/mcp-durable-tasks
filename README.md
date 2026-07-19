@@ -138,6 +138,31 @@ export MDT_TEST_DATABASE_URL="host=127.0.0.1 port=5432 user=postgres dbname=mdt"
 .venv/bin/python bench/benchmark.py --conninfo "$MDT_TEST_DATABASE_URL"
 ```
 
+## Speaking the protocol
+
+`protocol.py` is a thin SEP-2663 wire adapter: it maps store operations to the
+`tasks/*` result shapes an MCP server puts on the wire (`create` → task
+envelope, `tasks/get` → DetailedTask with the result inlined on completion,
+`tasks/cancel` → ack), with no transport coupling so it stays testable with plain
+dicts. `tests/test_protocol.py` includes a **protocol-level durability test**: a
+task created and completed through the adapter is still retrievable, with its
+result, from a fresh store instance pointed at the same database (i.e. after a
+restart).
+
+Honest scope: this targets the SEP-2663 wire *fields*, not full protocol
+conformance (capability negotiation, notifications, and the input-required loop
+are roadmap). The official Python SDK does not yet implement Tasks
+([python-sdk #2806](https://github.com/modelcontextprotocol/python-sdk/issues/2806) /
+[#3005](https://github.com/modelcontextprotocol/python-sdk/pull/3005)); the intent
+is to conform to that `TaskStore` interface once it lands.
+
+## Design decisions
+
+Every major choice — with the alternatives considered, why they were rejected,
+and the failure mode each guards against — is written up in [`DESIGN.md`](DESIGN.md).
+That's the document to read alongside the source (and the one to have in mind for
+"why not X?" questions).
+
 ## Scope & honest limitations
 
 - Single-node Postgres; no leader election or multi-region. The durability story is "survive process crash," not "survive datacenter loss."
