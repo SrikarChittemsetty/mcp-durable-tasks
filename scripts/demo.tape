@@ -14,6 +14,6 @@ Set Height 900
 Set Theme "Dracula"
 Set Padding 20
 
-Type "python scripts/demo.py"
+Type "clear && .venv/bin/python scripts/demo.py"
 Enter
-Sleep 7s
+Sleep 8s

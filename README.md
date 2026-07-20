@@ -22,6 +22,8 @@ That claim isn't asserted; it's **tested against a real Postgres with real `SIGK
 
 A real, runnable demo — real worker processes, real `SIGKILL`s, real rows in Postgres. It shows a naive charge double-billing a customer after a crash, then this system staying exactly-once through two different crashes:
 
+![Crash-durability demo: a naive charge double-bills $100 after a crash, while this system charges exactly once ($50) through a crash before commit and a crash after commit.](demo.gif)
+
 ```
 $ python scripts/demo.py
 
